@@ -19,17 +19,17 @@ struct PopoverView: View {
                 lastUpdatedAt: viewModel.lastUpdatedAt,
                 isRefreshing: viewModel.isRefreshing,
                 onRefresh: { viewModel.refreshNow() },
-                onPreferences: { Self.openPreferences() },
                 onQuit: { NSApplication.shared.terminate(nil) }
             )
         }
         .frame(width: 320)
     }
 
-    static func openPreferences() {
-        NSApp.activate(ignoringOtherApps: true)
-        // The SwiftUI `Settings` scene installs an action handler for this selector on macOS 13+.
-        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+    static func openPreferencesLegacy() {
+        DispatchQueue.main.async {
+            NSApp.activate(ignoringOtherApps: true)
+            NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
+        }
     }
 
     @ViewBuilder
@@ -128,7 +128,6 @@ private struct FooterBar: View {
     let lastUpdatedAt: Date?
     let isRefreshing: Bool
     let onRefresh: () -> Void
-    let onPreferences: () -> Void
     let onQuit: () -> Void
 
     var body: some View {
@@ -148,12 +147,24 @@ private struct FooterBar: View {
             }
             .buttonStyle(.borderless)
             .help("Refresh")
-            Button("Preferences…", action: onPreferences)
-                .buttonStyle(.borderless)
+            preferencesButton
             Button("Quit", action: onQuit)
                 .buttonStyle(.borderless)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
+    }
+
+    @ViewBuilder
+    private var preferencesButton: some View {
+        if #available(macOS 14.0, *) {
+            SettingsLink {
+                Text("Preferences…")
+            }
+            .buttonStyle(.borderless)
+        } else {
+            Button("Preferences…") { PopoverView.openPreferencesLegacy() }
+                .buttonStyle(.borderless)
+        }
     }
 }
