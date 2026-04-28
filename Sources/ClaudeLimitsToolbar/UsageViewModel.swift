@@ -1,0 +1,124 @@
+import Foundation
+import Combine
+#if canImport(AppKit)
+import AppKit
+#endif
+
+@MainActor
+final class UsageViewModel: ObservableObject {
+    @Published private(set) var state: UsageState
+    @Published private(set) var lastUpdatedAt: Date?
+    @Published var isRefreshing: Bool = false
+
+    private let keychain: KeychainClient
+    private let api: UsageAPIClient
+    private let store: UsageStore
+    private let notifier: ThresholdNotifier
+    private let settings: AppSettings
+
+    private var loopTask: Task<Void, Never>?
+    private var settingsCancellable: AnyCancellable?
+
+    init(keychain: KeychainClient,
+         api: UsageAPIClient,
+         store: UsageStore,
+         notifier: ThresholdNotifier,
+         settings: AppSettings) {
+        self.keychain = keychain
+        self.api = api
+        self.store = store
+        self.notifier = notifier
+        self.settings = settings
+
+        let last = store.load()
+        if let last {
+            self.state = .ok(last)
+            self.lastUpdatedAt = last.fetchedAt
+        } else {
+            self.state = .loading
+            self.lastUpdatedAt = nil
+        }
+    }
+
+    func start() {
+        observeSettings()
+        observeWake()
+        restartLoop()
+    }
+
+    private func observeWake() {
+        #if canImport(AppKit)
+        NotificationCenter.default.removeObserver(
+            self,
+            name: NSWorkspace.didWakeNotification,
+            object: nil
+        )
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.refreshNow() }
+        }
+        #endif
+    }
+
+    func refreshNow() {
+        restartLoop()
+    }
+
+    private func restartLoop() {
+        loopTask?.cancel()
+        loopTask = Task { [weak self] in
+            await self?.runLoop()
+        }
+    }
+
+    private func runLoop() async {
+        while !Task.isCancelled {
+            await performRefresh()
+            let seconds = max(30, settings.refreshIntervalSeconds)
+            do {
+                try await Task.sleep(nanoseconds: UInt64(seconds) * 1_000_000_000)
+            } catch {
+                return
+            }
+        }
+    }
+
+    private func performRefresh() async {
+        isRefreshing = true
+        defer { isRefreshing = false }
+
+        let token: String
+        do {
+            token = try keychain.fetchAccessToken()
+        } catch let e as UsageError {
+            state = .error(e, lastKnown: state.snapshot)
+            return
+        } catch {
+            state = .error(.network(error.localizedDescription), lastKnown: state.snapshot)
+            return
+        }
+
+        do {
+            let response = try await api.fetchUsage(token: token)
+            let snapshot = UsageSnapshot(response, fetchedAt: Date())
+            store.save(snapshot)
+            state = .ok(snapshot)
+            lastUpdatedAt = snapshot.fetchedAt
+            notifier.evaluate(snapshot: snapshot, settings: settings)
+        } catch let e as UsageError {
+            state = .error(e, lastKnown: state.snapshot)
+        } catch {
+            state = .error(.network(error.localizedDescription), lastKnown: state.snapshot)
+        }
+    }
+
+    private func observeSettings() {
+        settingsCancellable = settings.$refreshIntervalSeconds
+            .removeDuplicates()
+            .dropFirst()
+            .sink { [weak self] _ in self?.restartLoop() }
+    }
+}
