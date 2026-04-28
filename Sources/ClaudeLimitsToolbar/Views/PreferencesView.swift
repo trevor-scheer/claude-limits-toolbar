@@ -23,6 +23,10 @@ struct PreferencesView: View {
                     Text("60 seconds").tag(60)
                     Text("2 minutes").tag(120)
                     Text("5 minutes").tag(300)
+                    Text("10 minutes").tag(600)
+                    Text("15 minutes").tag(900)
+                    Text("30 minutes").tag(1800)
+                    Text("1 hour").tag(3600)
                 }
             }
 

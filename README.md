@@ -60,7 +60,7 @@ brew install --cask trevorscheer/tap/claude-limits-toolbar
 Click the menu bar item, then **Preferences…** to set:
 
 - **Alert thresholds** — toggle low/high alerts and pick percentages (50–95%, default 75/90)
-- **Refresh interval** — 60 s, 2 min (default), or 5 min
+- **Refresh interval** — 60 s, 2 min (default), 5 / 10 / 15 / 30 min, or 1 hour
 - **Launch at login** — opt-in checkbox, on by default after first launch
 
 Settings are stored in `~/Library/Preferences/com.trevorscheer.claude-limits-toolbar.plist`.
