@@ -42,8 +42,8 @@ struct PreferencesView: View {
 
             Section("About") {
                 LabeledContent("Version", value: "0.1.0")
-                Link("github.com/trevorscheer/claude-limits-toolbar",
-                     destination: URL(string: "https://github.com/trevorscheer/claude-limits-toolbar")!)
+                Link("github.com/trevor-scheer/claude-limits-toolbar",
+                     destination: URL(string: "https://github.com/trevor-scheer/claude-limits-toolbar")!)
             }
         }
         .formStyle(.grouped)

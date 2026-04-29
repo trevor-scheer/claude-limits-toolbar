@@ -21,7 +21,7 @@ The app reads your Claude Code OAuth token from the macOS Keychain (the same ent
 ### Build from source
 
 ```bash
-git clone https://github.com/trevorscheer/claude-limits-toolbar.git
+git clone https://github.com/trevor-scheer/claude-limits-toolbar.git
 cd claude-limits-toolbar
 make app
 open "dist/Claude Limits.app"
@@ -37,7 +37,7 @@ UNIVERSAL=1 make app
 
 ### Pre-built DMG
 
-Download the latest DMG from [Releases](https://github.com/trevorscheer/claude-limits-toolbar/releases), open it, and drag `Claude Limits.app` to `/Applications`.
+Download the latest DMG from [Releases](https://github.com/trevor-scheer/claude-limits-toolbar/releases), open it, and drag `Claude Limits.app` to `/Applications`.
 
 The DMG is **unsigned** — Gatekeeper will refuse to launch it on first run. To allow it:
 
@@ -50,10 +50,8 @@ xattr -dr com.apple.quarantine "/Applications/Claude Limits.app"
 ### Homebrew cask
 
 ```bash
-brew install --cask trevorscheer/tap/claude-limits-toolbar
+brew install --cask trevor-scheer/tap/claude-limits-toolbar
 ```
-
-(Tap not yet published — coming soon.)
 
 ## Configuration
 
