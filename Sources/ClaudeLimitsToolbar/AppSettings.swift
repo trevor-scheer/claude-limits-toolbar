@@ -21,7 +21,7 @@ final class AppSettings: ObservableObject {
             "highThreshold": 90.0,
             "lowAlertEnabled": true,
             "highAlertEnabled": true,
-            "refreshIntervalSeconds": 120,
+            "refreshIntervalSeconds": 600,
             "launchAtLogin": true,
             "hasCompletedFirstLaunch": false,
         ])
