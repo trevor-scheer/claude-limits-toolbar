@@ -37,11 +37,31 @@ struct AnthropicUsageAPIClient: UsageAPIClient {
         case 401, 403:
             throw UsageError.tokenInvalid
         case 429:
-            throw UsageError.rateLimited
+            let header = http.value(forHTTPHeaderField: "Retry-After")
+            throw UsageError.rateLimited(retryAfter: Self.parseRetryAfter(header, now: Date()))
         default:
             throw UsageError.serverError(http.statusCode)
         }
     }
+
+    /// Parses RFC 7231 §7.1.3 `Retry-After` — either delta-seconds or HTTP-date.
+    static func parseRetryAfter(_ raw: String?, now: Date = Date()) -> Date? {
+        guard let raw = raw?.trimmingCharacters(in: .whitespaces), !raw.isEmpty else {
+            return nil
+        }
+        if let seconds = TimeInterval(raw) {
+            return now.addingTimeInterval(seconds)
+        }
+        return httpDateFormatter.date(from: raw)
+    }
+
+    private static let httpDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(identifier: "GMT")
+        f.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+        return f
+    }()
 
     static func decode(_ data: Data) throws -> UsageResponse {
         let decoder = JSONDecoder()

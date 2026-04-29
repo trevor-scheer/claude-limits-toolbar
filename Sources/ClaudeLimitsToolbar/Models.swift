@@ -70,7 +70,7 @@ enum UsageError: Error, Equatable {
     case keychainAccessFailed(OSStatus)
     case malformedKeychainPayload
     case tokenInvalid
-    case rateLimited
+    case rateLimited(retryAfter: Date?)
     case serverError(Int)
     case network(String)
     case decoding(String)
@@ -85,7 +85,11 @@ enum UsageError: Error, Equatable {
             return "Claude Code credentials are present but couldn't be parsed."
         case .tokenInvalid:
             return "The access token was rejected (401). Try `claude /login`."
-        case .rateLimited:
+        case .rateLimited(let retryAfter):
+            if let retryAfter, retryAfter > Date() {
+                let formatted = retryAfter.formatted(date: .omitted, time: .shortened)
+                return "Anthropic API is rate-limiting requests. Retrying at \(formatted)."
+            }
             return "Anthropic API is rate-limiting requests. Will retry."
         case .serverError(let code):
             return "Anthropic API returned \(code)."

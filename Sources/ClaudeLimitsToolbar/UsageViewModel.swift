@@ -64,6 +64,9 @@ final class UsageViewModel: ObservableObject {
     }
 
     func refreshNow() {
+        if rateLimitCooldownRemaining() != nil {
+            return
+        }
         restartLoop()
     }
 
@@ -77,13 +80,30 @@ final class UsageViewModel: ObservableObject {
     private func runLoop() async {
         while !Task.isCancelled {
             await performRefresh()
-            let seconds = max(30, settings.refreshIntervalSeconds)
+            let seconds = nextSleepSeconds()
             do {
                 try await Task.sleep(nanoseconds: UInt64(seconds) * 1_000_000_000)
             } catch {
                 return
             }
         }
+    }
+
+    private func nextSleepSeconds() -> Int {
+        let normal = max(30, settings.refreshIntervalSeconds)
+        if let cooldown = rateLimitCooldownRemaining() {
+            return max(normal, cooldown)
+        }
+        return normal
+    }
+
+    /// Returns seconds remaining until the API's `Retry-After` deadline, or `nil` if not in cooldown.
+    private func rateLimitCooldownRemaining() -> Int? {
+        guard case .error(.rateLimited(let retryAfter), _) = state,
+              let retryAfter else { return nil }
+        let delta = retryAfter.timeIntervalSinceNow
+        guard delta > 0 else { return nil }
+        return Int(delta.rounded(.up))
     }
 
     private func performRefresh() async {

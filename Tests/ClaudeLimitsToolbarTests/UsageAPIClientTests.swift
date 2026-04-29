@@ -56,4 +56,23 @@ import Foundation
             try AnthropicUsageAPIClient.decode(json)
         }
     }
+
+    @Test func retryAfterParsesDeltaSeconds() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let parsed = AnthropicUsageAPIClient.parseRetryAfter("120", now: now)
+        #expect(parsed == now.addingTimeInterval(120))
+    }
+
+    @Test func retryAfterParsesHTTPDate() {
+        let parsed = AnthropicUsageAPIClient.parseRetryAfter("Wed, 21 Oct 2015 07:28:00 GMT")
+        let expected = ISO8601DateFormatter().date(from: "2015-10-21T07:28:00Z")!
+        #expect(parsed == expected)
+    }
+
+    @Test func retryAfterIgnoresGarbage() {
+        #expect(AnthropicUsageAPIClient.parseRetryAfter("not a date") == nil)
+        #expect(AnthropicUsageAPIClient.parseRetryAfter(nil) == nil)
+        #expect(AnthropicUsageAPIClient.parseRetryAfter("") == nil)
+        #expect(AnthropicUsageAPIClient.parseRetryAfter("   ") == nil)
+    }
 }
