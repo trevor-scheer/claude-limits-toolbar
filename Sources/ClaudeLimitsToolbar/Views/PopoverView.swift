@@ -158,13 +158,47 @@ private struct FooterBar: View {
     @ViewBuilder
     private var preferencesButton: some View {
         if #available(macOS 14.0, *) {
-            SettingsLink {
-                Text("Preferences…")
-            }
-            .buttonStyle(.borderless)
+            ModernSettingsButton()
         } else {
             Button("Preferences…") { PopoverView.openPreferencesLegacy() }
                 .buttonStyle(.borderless)
         }
+    }
+}
+
+// LSUIElement apps can't bring their windows above other apps without first
+// being promoted to a regular activation policy. Promote on open, demote when
+// the Settings window closes — costs a brief Dock icon while it's open.
+@available(macOS 14.0, *)
+private struct ModernSettingsButton: View {
+    @Environment(\.openSettings) private var openSettings
+
+    var body: some View {
+        Button("Preferences…") {
+            NSApp.setActivationPolicy(.regular)
+            NSApp.activate(ignoringOtherApps: true)
+            openSettings()
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                guard let window = NSApp.windows.first(where: {
+                    $0.identifier?.rawValue == "com_apple_SwiftUI_Settings_window"
+                }) else {
+                    NSApp.setActivationPolicy(.accessory)
+                    return
+                }
+                window.makeKeyAndOrderFront(nil)
+
+                var observer: NSObjectProtocol?
+                observer = NotificationCenter.default.addObserver(
+                    forName: NSWindow.willCloseNotification,
+                    object: window,
+                    queue: .main
+                ) { _ in
+                    NSApp.setActivationPolicy(.accessory)
+                    if let observer { NotificationCenter.default.removeObserver(observer) }
+                }
+            }
+        }
+        .buttonStyle(.borderless)
     }
 }
