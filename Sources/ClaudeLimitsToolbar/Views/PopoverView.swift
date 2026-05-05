@@ -117,10 +117,9 @@ private struct LimitRow: View {
     }
 
     private var resetText: String {
-        if let l = limit {
-            return "resets in \(DurationFormatter.compact(until: l.resetsAt))"
-        }
-        return "no usage"
+        guard let l = limit else { return "no usage" }
+        guard let resetsAt = l.resetsAt else { return "no upcoming reset" }
+        return "resets in \(DurationFormatter.compact(until: resetsAt))"
     }
 }
 

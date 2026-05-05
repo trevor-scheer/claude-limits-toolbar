@@ -2,7 +2,7 @@ import Foundation
 
 struct UsageLimit: Codable, Equatable, Hashable {
     var utilization: Double
-    var resetsAt: Date
+    var resetsAt: Date?
 }
 
 struct UsageResponse: Decodable, Equatable {

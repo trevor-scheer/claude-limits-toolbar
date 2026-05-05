@@ -51,7 +51,11 @@ final class ThresholdNotifier {
 
         if storedResetsAt != limit.resetsAt {
             lastLevel = .none
-            defaults.set(limit.resetsAt, forKey: resetsAtKey)
+            if let resetsAt = limit.resetsAt {
+                defaults.set(resetsAt, forKey: resetsAtKey)
+            } else {
+                defaults.removeObject(forKey: resetsAtKey)
+            }
             defaults.set(AlertLevel.none.rawValue, forKey: stateKey)
         }
 

@@ -47,7 +47,8 @@ enum BarLabel {
     private static func primary(snap: UsageSnapshot, now: Date) -> String? {
         guard let five = snap.fiveHour else { return nil }
         let pct = PercentageFormatter.short(five.utilization)
-        let dur = DurationFormatter.compact(until: five.resetsAt, now: now)
+        guard let resetsAt = five.resetsAt else { return pct }
+        let dur = DurationFormatter.compact(until: resetsAt, now: now)
         return "\(pct) · \(dur)"
     }
 }

@@ -47,6 +47,31 @@ import Foundation
         #expect(r.sevenDayOpus == nil)
     }
 
+    /// Real response shape observed 2026-05-05: `resets_at` can be null when
+    /// utilization is 0, and the response includes unknown top-level keys
+    /// (`seven_day_oauth_apps`, `extra_usage`, etc.) we should ignore.
+    @Test func decodesNullResetsAtAndUnknownKeys() throws {
+        let json = #"""
+        {
+          "five_hour": {"utilization": 17.0, "resets_at": "2026-05-05T18:30:01.015066+00:00"},
+          "seven_day": {"utilization": 16.0, "resets_at": "2026-05-11T14:00:00.015085+00:00"},
+          "seven_day_oauth_apps": null,
+          "seven_day_opus": null,
+          "seven_day_sonnet": {"utilization": 0.0, "resets_at": null},
+          "seven_day_cowork": null,
+          "tangelo": null,
+          "extra_usage": {"is_enabled": true, "monthly_limit": 5000, "used_credits": 0.0, "utilization": null, "currency": "USD"}
+        }
+        """#.data(using: .utf8)!
+
+        let r = try AnthropicUsageAPIClient.decode(json)
+        #expect(r.fiveHour?.utilization == 17.0)
+        #expect(r.sevenDay?.utilization == 16.0)
+        #expect(r.sevenDaySonnet?.utilization == 0.0)
+        #expect(r.sevenDaySonnet?.resetsAt == nil)
+        #expect(r.sevenDayOpus == nil)
+    }
+
     @Test func rejectsMalformedDate() {
         let json = #"""
         {"five_hour": {"utilization": 1, "resets_at": "yesterday"}}
