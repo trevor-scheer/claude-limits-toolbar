@@ -110,6 +110,10 @@ final class UsageViewModel: ObservableObject {
         isRefreshing = true
         defer { isRefreshing = false }
 
+        await attemptRefresh(allowRetry: true)
+    }
+
+    private func attemptRefresh(allowRetry: Bool) async {
         let token: String
         do {
             token = try keychain.fetchAccessToken()
@@ -128,6 +132,11 @@ final class UsageViewModel: ObservableObject {
             state = .ok(snapshot)
             lastUpdatedAt = snapshot.fetchedAt
             notifier.evaluate(snapshot: snapshot, settings: settings)
+        } catch UsageError.tokenInvalid where allowRetry {
+            // Cached token may be stale (claude /login or server-side rotation).
+            // Evict and re-read Claude's keychain entry once.
+            keychain.purgeCache()
+            await attemptRefresh(allowRetry: false)
         } catch let e as UsageError {
             state = .error(e, lastKnown: state.snapshot)
         } catch {

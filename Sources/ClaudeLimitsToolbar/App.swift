@@ -14,7 +14,10 @@ final class AppContext: ObservableObject {
         self.settings = settings
         self.notifier = notifier
         self.viewModel = UsageViewModel(
-            keychain: ClaudeKeychainClient(),
+            keychain: CachingKeychainClient(
+                inner: ClaudeKeychainClient(),
+                cache: KeychainTokenCache()
+            ),
             api: AnthropicUsageAPIClient(),
             store: UserDefaultsUsageStore(),
             notifier: notifier,
