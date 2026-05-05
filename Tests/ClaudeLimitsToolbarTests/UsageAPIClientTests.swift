@@ -72,6 +72,22 @@ import Foundation
         #expect(r.sevenDayOpus == nil)
     }
 
+    @Test func decodingErrorIncludesKeyPath() {
+        let json = #"""
+        {"five_hour": {"resets_at": "2026-02-08T12:00:00+00:00"}}
+        """#.data(using: .utf8)!
+
+        do {
+            _ = try AnthropicUsageAPIClient.decode(json)
+            Issue.record("expected decode to throw")
+        } catch let UsageError.decoding(detail) {
+            #expect(detail.contains("utilization"))
+            #expect(detail.contains("fiveHour"))
+        } catch {
+            Issue.record("unexpected error \(error)")
+        }
+    }
+
     @Test func rejectsMalformedDate() {
         let json = #"""
         {"five_hour": {"utilization": 1, "resets_at": "yesterday"}}

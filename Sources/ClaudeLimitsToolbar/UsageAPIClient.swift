@@ -79,8 +79,32 @@ struct AnthropicUsageAPIClient: UsageAPIClient {
         do {
             return try decoder.decode(UsageResponse.self, from: data)
         } catch {
-            throw UsageError.decoding(error.localizedDescription)
+            throw UsageError.decoding(describe(decodingError: error))
         }
+    }
+
+    /// `localizedDescription` collapses `DecodingError` to a vague string.
+    /// Surface the key path and underlying detail so schema drift is debuggable.
+    static func describe(decodingError error: Error) -> String {
+        guard let decoding = error as? DecodingError else {
+            return error.localizedDescription
+        }
+        switch decoding {
+        case .keyNotFound(let key, let ctx):
+            return "missing key \"\(key.stringValue)\" at \(pathString(ctx.codingPath))"
+        case .valueNotFound(let type, let ctx):
+            return "missing \(type) at \(pathString(ctx.codingPath))"
+        case .typeMismatch(let type, let ctx):
+            return "expected \(type) at \(pathString(ctx.codingPath))"
+        case .dataCorrupted(let ctx):
+            return "\(ctx.debugDescription) at \(pathString(ctx.codingPath))"
+        @unknown default:
+            return String(describing: decoding)
+        }
+    }
+
+    private static func pathString(_ path: [CodingKey]) -> String {
+        path.isEmpty ? "<root>" : path.map(\.stringValue).joined(separator: ".")
     }
 
     private static let iso: ISO8601DateFormatter = {
