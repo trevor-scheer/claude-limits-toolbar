@@ -8,7 +8,10 @@ struct PopoverView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if let error = viewModel.state.error {
-                ErrorBanner(error: error)
+                ErrorBanner(
+                    error: error,
+                    onReauth: { viewModel.reauthenticate() }
+                )
                 Divider()
             }
 
@@ -60,15 +63,27 @@ struct PopoverView: View {
 
 private struct ErrorBanner: View {
     let error: UsageError
+    let onReauth: () -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.yellow)
-            Text(error.displayMessage)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.yellow)
+                Text(error.displayMessage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if error.isRecoverableByReauth {
+                HStack {
+                    Spacer()
+                    Button("Re-authenticate", action: onReauth)
+                        .buttonStyle(.borderless)
+                        .font(.caption)
+                        .help("Clear the cached access token and re-read Claude Code's keychain entry.")
+                }
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)

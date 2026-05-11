@@ -69,11 +69,23 @@ enum UsageError: Error, Equatable {
     case noKeychainEntry
     case keychainAccessFailed(OSStatus)
     case malformedKeychainPayload
-    case tokenInvalid
-    case rateLimited(retryAfter: Date?)
-    case serverError(Int)
+    case tokenInvalid(detail: String? = nil)
+    case rateLimited(retryAfter: Date?, detail: String? = nil)
+    case serverError(Int, detail: String? = nil)
     case network(String)
     case decoding(String)
+
+    /// True when the error is plausibly fixable by clearing the cached token
+    /// and re-reading Claude's keychain entry. Drives the "Re-authenticate"
+    /// affordance in the error banner.
+    var isRecoverableByReauth: Bool {
+        switch self {
+        case .tokenInvalid, .rateLimited, .serverError, .malformedKeychainPayload:
+            return true
+        case .noKeychainEntry, .keychainAccessFailed, .network, .decoding:
+            return false
+        }
+    }
 
     var displayMessage: String {
         switch self {
@@ -83,21 +95,29 @@ enum UsageError: Error, Equatable {
             return "Couldn't read Claude Code credentials (status \(status))."
         case .malformedKeychainPayload:
             return "Claude Code credentials are present but couldn't be parsed."
-        case .tokenInvalid:
-            return "The access token was rejected (401). Try `claude /login`."
-        case .rateLimited(let retryAfter):
+        case .tokenInvalid(let detail):
+            return appending(detail, to: "The access token was rejected. Try `claude /login`, then click Re-authenticate.")
+        case .rateLimited(let retryAfter, let detail):
+            let base: String
             if let retryAfter, retryAfter > Date() {
                 let formatted = retryAfter.formatted(date: .omitted, time: .shortened)
-                return "Anthropic API is rate-limiting requests. Retrying at \(formatted)."
+                base = "Anthropic API is rate-limiting requests. Retrying at \(formatted)."
+            } else {
+                base = "Anthropic API is rate-limiting requests. Will retry."
             }
-            return "Anthropic API is rate-limiting requests. Will retry."
-        case .serverError(let code):
-            return "Anthropic API returned \(code)."
+            return appending(detail, to: base)
+        case .serverError(let code, let detail):
+            return appending(detail, to: "Anthropic API returned \(code).")
         case .network(let detail):
             return "Network error: \(detail)"
         case .decoding(let detail):
             return "Couldn't parse the API response: \(detail)"
         }
+    }
+
+    private func appending(_ detail: String?, to base: String) -> String {
+        guard let detail, !detail.isEmpty else { return base }
+        return "\(base) (\(detail))"
     }
 }
 

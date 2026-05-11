@@ -35,13 +35,86 @@ struct AnthropicUsageAPIClient: UsageAPIClient {
         case 200..<300:
             return try Self.decode(data)
         case 401, 403:
-            throw UsageError.tokenInvalid
+            throw UsageError.tokenInvalid(detail: Self.parseErrorDetail(data))
         case 429:
+            let parsed = Self.parseErrorBody(data)
+            // Anthropic occasionally returns 429 for non-rate-limit conditions
+            // (notably credential problems). If the body's `error.type` reads
+            // like an auth issue, route through the tokenInvalid path so the
+            // caller's evict-and-retry recovery kicks in.
+            if Self.looksLikeAuthFailure(parsed) {
+                throw UsageError.tokenInvalid(detail: Self.formatDetail(parsed))
+            }
             let header = http.value(forHTTPHeaderField: "Retry-After")
-            throw UsageError.rateLimited(retryAfter: Self.parseRetryAfter(header, now: Date()))
+            throw UsageError.rateLimited(
+                retryAfter: Self.parseRetryAfter(header, now: Date()),
+                detail: Self.formatDetail(parsed)
+            )
         default:
-            throw UsageError.serverError(http.statusCode)
+            throw UsageError.serverError(http.statusCode, detail: Self.parseErrorDetail(data))
         }
+    }
+
+    struct ParsedAPIError: Equatable {
+        var topLevelType: String?
+        var errorType: String?
+        var message: String?
+    }
+
+    /// Decodes Anthropic's standard error envelope:
+    ///   {"type": "error", "error": {"type": "...", "message": "..."}}
+    /// Falls back to a raw string snippet if the body isn't JSON.
+    static func parseErrorBody(_ data: Data) -> ParsedAPIError {
+        guard !data.isEmpty else { return ParsedAPIError() }
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            let top = json["type"] as? String
+            let inner = json["error"] as? [String: Any]
+            return ParsedAPIError(
+                topLevelType: top,
+                errorType: inner?["type"] as? String,
+                message: inner?["message"] as? String
+            )
+        }
+        let snippet = String(data: data.prefix(200), encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return ParsedAPIError(message: snippet?.isEmpty == false ? snippet : nil)
+    }
+
+    /// Best-effort detail string for an error response — combines the parsed
+    /// error type and message when present, else a raw snippet.
+    static func parseErrorDetail(_ data: Data) -> String? {
+        formatDetail(parseErrorBody(data))
+    }
+
+    static func formatDetail(_ parsed: ParsedAPIError) -> String? {
+        var parts: [String] = []
+        if let t = parsed.errorType, !t.isEmpty { parts.append(t) }
+        if let m = parsed.message, !m.isEmpty { parts.append(m) }
+        if parts.isEmpty { return nil }
+        return parts.joined(separator: ": ")
+    }
+
+    /// 429 should be treated as an auth failure when the body says so. We match
+    /// on common Anthropic error types and on substrings that show up in their
+    /// messages for OAuth credential issues.
+    static func looksLikeAuthFailure(_ parsed: ParsedAPIError) -> Bool {
+        let needles = [
+            "authentication",
+            "unauthorized",
+            "invalid_api_key",
+            "invalid_token",
+            "invalid_request",
+            "permission",
+            "credential",
+            "expired",
+            "revoked",
+            "oauth",
+        ]
+        let haystack = [parsed.errorType, parsed.message]
+            .compactMap { $0?.lowercased() }
+            .joined(separator: " ")
+        guard !haystack.isEmpty else { return false }
+        return needles.contains(where: haystack.contains)
     }
 
     /// Parses RFC 7231 §7.1.3 `Retry-After` — either delta-seconds or HTTP-date.

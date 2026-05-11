@@ -70,6 +70,17 @@ final class UsageViewModel: ObservableObject {
         restartLoop()
     }
 
+    /// Force-purge the cached access token and immediately re-read Claude's
+    /// keychain entry. Used by the "Re-authenticate" affordance when the cache
+    /// is wedged on a stale token the API isn't honoring.
+    func reauthenticate() {
+        keychain.purgeCache()
+        if case .error(.rateLimited, let last) = state {
+            state = .error(.tokenInvalid(detail: "Re-authenticating…"), lastKnown: last)
+        }
+        restartLoop()
+    }
+
     private func restartLoop() {
         loopTask?.cancel()
         loopTask = Task { [weak self] in
@@ -99,7 +110,7 @@ final class UsageViewModel: ObservableObject {
 
     /// Returns seconds remaining until the API's `Retry-After` deadline, or `nil` if not in cooldown.
     private func rateLimitCooldownRemaining() -> Int? {
-        guard case .error(.rateLimited(let retryAfter), _) = state,
+        guard case .error(.rateLimited(let retryAfter, _), _) = state,
               let retryAfter else { return nil }
         let delta = retryAfter.timeIntervalSinceNow
         guard delta > 0 else { return nil }
@@ -135,6 +146,14 @@ final class UsageViewModel: ObservableObject {
         } catch UsageError.tokenInvalid where allowRetry {
             // Cached token may be stale (claude /login or server-side rotation).
             // Evict and re-read Claude's keychain entry once.
+            keychain.purgeCache()
+            await attemptRefresh(allowRetry: false)
+        } catch UsageError.rateLimited where allowRetry {
+            // Belt-and-suspenders: even when the body doesn't explicitly look
+            // like an auth failure, a 429 on the very first attempt of a cycle
+            // is often a stale-token symptom. Purge once and try with a fresh
+            // credential; if it still 429s, the second attempt will respect
+            // Retry-After.
             keychain.purgeCache()
             await attemptRefresh(allowRetry: false)
         } catch let e as UsageError {

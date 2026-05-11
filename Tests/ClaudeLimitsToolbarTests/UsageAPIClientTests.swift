@@ -116,4 +116,65 @@ import Foundation
         #expect(AnthropicUsageAPIClient.parseRetryAfter("") == nil)
         #expect(AnthropicUsageAPIClient.parseRetryAfter("   ") == nil)
     }
+
+    @Test func parsesAnthropicErrorEnvelope() {
+        let body = #"""
+        {"type": "error", "error": {"type": "authentication_error", "message": "OAuth token expired"}}
+        """#.data(using: .utf8)!
+
+        let parsed = AnthropicUsageAPIClient.parseErrorBody(body)
+        #expect(parsed.topLevelType == "error")
+        #expect(parsed.errorType == "authentication_error")
+        #expect(parsed.message == "OAuth token expired")
+    }
+
+    @Test func parseErrorBodyFallsBackToRawSnippet() {
+        let body = "internal error: something went sideways".data(using: .utf8)!
+        let parsed = AnthropicUsageAPIClient.parseErrorBody(body)
+        #expect(parsed.errorType == nil)
+        #expect(parsed.message?.contains("sideways") == true)
+    }
+
+    @Test func parseErrorBodyHandlesEmpty() {
+        let parsed = AnthropicUsageAPIClient.parseErrorBody(Data())
+        #expect(parsed == AnthropicUsageAPIClient.ParsedAPIError())
+    }
+
+    @Test func authFailureClassifierCatchesCommonShapes() {
+        let cases: [(String?, String?)] = [
+            ("authentication_error", nil),
+            ("invalid_request_error", "OAuth token has expired"),
+            (nil, "Token has been revoked"),
+            ("permission_error", "Credentials lack scope"),
+            (nil, "Bearer credential invalid"),
+        ]
+        for (errType, message) in cases {
+            let parsed = AnthropicUsageAPIClient.ParsedAPIError(
+                topLevelType: "error", errorType: errType, message: message
+            )
+            #expect(AnthropicUsageAPIClient.looksLikeAuthFailure(parsed),
+                    "expected auth-like classification for type=\(errType ?? "nil") message=\(message ?? "nil")")
+        }
+    }
+
+    @Test func authFailureClassifierRejectsRealRateLimits() {
+        let parsed = AnthropicUsageAPIClient.ParsedAPIError(
+            topLevelType: "error",
+            errorType: "rate_limit_error",
+            message: "You have exceeded your 5-hour token budget."
+        )
+        #expect(!AnthropicUsageAPIClient.looksLikeAuthFailure(parsed))
+    }
+
+    @Test func formatDetailJoinsTypeAndMessage() {
+        let parsed = AnthropicUsageAPIClient.ParsedAPIError(
+            errorType: "authentication_error",
+            message: "token expired"
+        )
+        #expect(AnthropicUsageAPIClient.formatDetail(parsed) == "authentication_error: token expired")
+    }
+
+    @Test func formatDetailReturnsNilWhenEmpty() {
+        #expect(AnthropicUsageAPIClient.formatDetail(AnthropicUsageAPIClient.ParsedAPIError()) == nil)
+    }
 }
