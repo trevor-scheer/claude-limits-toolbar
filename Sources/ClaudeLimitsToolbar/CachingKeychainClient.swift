@@ -13,30 +13,23 @@ protocol TokenCache: Sendable {
 struct CachingKeychainClient: KeychainClient {
     let inner: KeychainClient
     let cache: TokenCache
-    /// Skew below the token's expiry where we proactively refresh.
-    let refreshSkew: TimeInterval
-    let clock: @Sendable () -> Date
 
-    init(
-        inner: KeychainClient,
-        cache: TokenCache,
-        refreshSkew: TimeInterval = 60,
-        clock: @escaping @Sendable () -> Date = { Date() }
-    ) {
+    init(inner: KeychainClient, cache: TokenCache) {
         self.inner = inner
         self.cache = cache
-        self.refreshSkew = refreshSkew
-        self.clock = clock
     }
 
+    /// Always serves the cached credential when present. We don't refresh on
+    /// the token's `expiresAt` because touching `inner` reads Claude's keychain
+    /// entry, which prompts the user. The `tokenInvalid` retry path in
+    /// `UsageViewModel` purges this cache when the API rejects the token, so
+    /// the only times we hit `inner` are first launch and after a 401.
     func fetchCredential() throws -> KeychainCredential {
-        if let cached = cache.load(), let exp = cached.expiresAt, exp > clock().addingTimeInterval(refreshSkew) {
+        if let cached = cache.load() {
             return cached
         }
         let fresh = try inner.fetchCredential()
-        if fresh.expiresAt != nil {
-            try? cache.save(fresh)
-        }
+        try? cache.save(fresh)
         return fresh
     }
 

@@ -4,11 +4,10 @@ import Foundation
 
 @Suite struct CachingKeychainClientTests {
     @Test func returnsCachedTokenWithoutHittingInner() throws {
-        let now = Date(timeIntervalSince1970: 1_800_000_000)
-        let cached = KeychainCredential(accessToken: "cached", expiresAt: now.addingTimeInterval(3600))
+        let cached = KeychainCredential(accessToken: "cached", expiresAt: nil)
         let cache = InMemoryTokenCache(cached)
-        let inner = CountingKeychainClient(credential: KeychainCredential(accessToken: "fresh", expiresAt: now.addingTimeInterval(7200)))
-        let client = CachingKeychainClient(inner: inner, cache: cache, clock: { now })
+        let inner = CountingKeychainClient(credential: KeychainCredential(accessToken: "fresh", expiresAt: nil))
+        let client = CachingKeychainClient(inner: inner, cache: cache)
 
         let cred = try client.fetchCredential()
 
@@ -17,10 +16,9 @@ import Foundation
     }
 
     @Test func cacheMissReadsInnerAndPopulatesCache() throws {
-        let now = Date(timeIntervalSince1970: 1_800_000_000)
         let cache = InMemoryTokenCache()
-        let inner = CountingKeychainClient(credential: KeychainCredential(accessToken: "fresh", expiresAt: now.addingTimeInterval(7200)))
-        let client = CachingKeychainClient(inner: inner, cache: cache, clock: { now })
+        let inner = CountingKeychainClient(credential: KeychainCredential(accessToken: "fresh", expiresAt: nil))
+        let client = CachingKeychainClient(inner: inner, cache: cache)
 
         let cred = try client.fetchCredential()
 
@@ -29,38 +27,26 @@ import Foundation
         #expect(cache.load()?.accessToken == "fresh")
     }
 
-    @Test func expiredCacheRereadsInner() throws {
-        let now = Date(timeIntervalSince1970: 1_800_000_000)
-        // Cached token expires in the past — must not be served.
-        let cached = KeychainCredential(accessToken: "stale", expiresAt: now.addingTimeInterval(-10))
-        let cache = InMemoryTokenCache(cached)
-        let inner = CountingKeychainClient(credential: KeychainCredential(accessToken: "fresh", expiresAt: now.addingTimeInterval(7200)))
-        let client = CachingKeychainClient(inner: inner, cache: cache, clock: { now })
+    @Test func servesCachedTokenEvenWhenExpired() throws {
+        // We don't refresh on time-based expiry — that would touch Claude's
+        // keychain entry and prompt the user. The 401 retry path purges the
+        // cache when the API actually rejects the token.
+        let stale = KeychainCredential(accessToken: "stale", expiresAt: Date(timeIntervalSince1970: 0))
+        let cache = InMemoryTokenCache(stale)
+        let inner = CountingKeychainClient(credential: KeychainCredential(accessToken: "fresh", expiresAt: nil))
+        let client = CachingKeychainClient(inner: inner, cache: cache)
 
         let cred = try client.fetchCredential()
 
-        #expect(cred.accessToken == "fresh")
-        #expect(inner.callCount == 1)
-    }
-
-    @Test func tokenWithinSkewIsTreatedAsExpired() throws {
-        let now = Date(timeIntervalSince1970: 1_800_000_000)
-        // Within the 60s skew window — refresh proactively.
-        let cached = KeychainCredential(accessToken: "almost", expiresAt: now.addingTimeInterval(30))
-        let cache = InMemoryTokenCache(cached)
-        let inner = CountingKeychainClient(credential: KeychainCredential(accessToken: "fresh", expiresAt: now.addingTimeInterval(7200)))
-        let client = CachingKeychainClient(inner: inner, cache: cache, clock: { now })
-
-        _ = try client.fetchCredential()
-        #expect(inner.callCount == 1)
+        #expect(cred.accessToken == "stale")
+        #expect(inner.callCount == 0)
     }
 
     @Test func purgeCacheClearsAndForcesReread() throws {
-        let now = Date(timeIntervalSince1970: 1_800_000_000)
-        let cached = KeychainCredential(accessToken: "cached", expiresAt: now.addingTimeInterval(3600))
+        let cached = KeychainCredential(accessToken: "cached", expiresAt: nil)
         let cache = InMemoryTokenCache(cached)
-        let inner = CountingKeychainClient(credential: KeychainCredential(accessToken: "fresh", expiresAt: now.addingTimeInterval(7200)))
-        let client = CachingKeychainClient(inner: inner, cache: cache, clock: { now })
+        let inner = CountingKeychainClient(credential: KeychainCredential(accessToken: "fresh", expiresAt: nil))
+        let client = CachingKeychainClient(inner: inner, cache: cache)
 
         client.purgeCache()
         #expect(cache.load() == nil)
@@ -70,14 +56,13 @@ import Foundation
         #expect(inner.callCount == 1)
     }
 
-    @Test func skipsCachingWhenInnerLacksExpiry() throws {
-        let now = Date(timeIntervalSince1970: 1_800_000_000)
+    @Test func cachesEvenWhenExpiryUnknown() throws {
         let cache = InMemoryTokenCache()
         let inner = CountingKeychainClient(credential: KeychainCredential(accessToken: "fresh", expiresAt: nil))
-        let client = CachingKeychainClient(inner: inner, cache: cache, clock: { now })
+        let client = CachingKeychainClient(inner: inner, cache: cache)
 
         _ = try client.fetchCredential()
-        #expect(cache.load() == nil)
+        #expect(cache.load()?.accessToken == "fresh")
     }
 
     @Test func parsesMillisecondExpiresAt() throws {
