@@ -11,6 +11,7 @@ final class AppContext: ObservableObject {
     init() {
         let settings = AppSettings()
         let notifier = ThresholdNotifier()
+        let diagnostics = DiagnosticsRecorder()
         self.settings = settings
         self.notifier = notifier
         self.viewModel = UsageViewModel(
@@ -18,10 +19,11 @@ final class AppContext: ObservableObject {
                 inner: ClaudeKeychainClient(),
                 cache: KeychainTokenCache()
             ),
-            api: AnthropicUsageAPIClient(),
+            api: AnthropicUsageAPIClient(diagnostics: diagnostics),
             store: UserDefaultsUsageStore(),
             notifier: notifier,
-            settings: settings
+            settings: settings,
+            diagnostics: diagnostics
         )
     }
 }

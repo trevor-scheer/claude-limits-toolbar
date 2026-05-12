@@ -15,6 +15,7 @@ final class UsageViewModel: ObservableObject {
     private let store: UsageStore
     private let notifier: ThresholdNotifier
     private let settings: AppSettings
+    private let diagnostics: DiagnosticsRecorder?
 
     private var loopTask: Task<Void, Never>?
     private var settingsCancellable: AnyCancellable?
@@ -23,12 +24,14 @@ final class UsageViewModel: ObservableObject {
          api: UsageAPIClient,
          store: UsageStore,
          notifier: ThresholdNotifier,
-         settings: AppSettings) {
+         settings: AppSettings,
+         diagnostics: DiagnosticsRecorder? = nil) {
         self.keychain = keychain
         self.api = api
         self.store = store
         self.notifier = notifier
         self.settings = settings
+        self.diagnostics = diagnostics
 
         let last = store.load()
         if let last {
@@ -79,6 +82,23 @@ final class UsageViewModel: ObservableObject {
             state = .error(.tokenInvalid(detail: "Re-authenticating…"), lastKnown: last)
         }
         restartLoop()
+    }
+
+    /// Build a paste-able diagnostics report and copy it to the clipboard.
+    /// Returns the report so tests can introspect it. Used by the error
+    /// banner's "Copy details" button.
+    @discardableResult
+    func copyDiagnostics() -> String {
+        let report = DiagnosticsFormatter.format(
+            diagnostics?.snapshot() ?? [],
+            state: state,
+            lastUpdatedAt: lastUpdatedAt
+        )
+        #if canImport(AppKit)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(report, forType: .string)
+        #endif
+        return report
     }
 
     private func restartLoop() {

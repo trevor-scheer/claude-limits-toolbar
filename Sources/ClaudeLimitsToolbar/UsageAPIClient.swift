@@ -7,9 +7,11 @@ protocol UsageAPIClient: Sendable {
 struct AnthropicUsageAPIClient: UsageAPIClient {
     static let endpoint = URL(string: "https://api.anthropic.com/api/oauth/usage")!
     let session: URLSession
+    let diagnostics: DiagnosticsRecorder?
 
-    init(session: URLSession = .shared) {
+    init(session: URLSession = .shared, diagnostics: DiagnosticsRecorder? = nil) {
         self.session = session
+        self.diagnostics = diagnostics
     }
 
     func fetchUsage(token: String) async throws -> UsageResponse {
@@ -19,40 +21,89 @@ struct AnthropicUsageAPIClient: UsageAPIClient {
         request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
         request.setValue("claude-limits-toolbar/0.1", forHTTPHeaderField: "User-Agent")
 
+        let fingerprint = APIExchange.tokenFingerprint(token)
         let data: Data
         let response: URLResponse
         do {
             (data, response) = try await session.data(for: request)
         } catch {
+            record(APIExchange(
+                timestamp: Date(),
+                tokenFingerprint: fingerprint,
+                statusCode: nil,
+                retryAfter: nil,
+                parsedErrorType: nil,
+                parsedErrorMessage: nil,
+                bodySnippet: nil,
+                transportError: error.localizedDescription
+            ))
+            DiagnosticsLog.api.error("transport error: \(error.localizedDescription, privacy: .public)")
             throw UsageError.network(error.localizedDescription)
         }
 
         guard let http = response as? HTTPURLResponse else {
+            record(APIExchange(
+                timestamp: Date(),
+                tokenFingerprint: fingerprint,
+                statusCode: nil,
+                retryAfter: nil,
+                parsedErrorType: nil,
+                parsedErrorMessage: nil,
+                bodySnippet: nil,
+                transportError: "Non-HTTP response"
+            ))
             throw UsageError.network("Non-HTTP response")
         }
+
+        let retryAfterHeader = http.value(forHTTPHeaderField: "Retry-After")
+        let parsedForLog = (200..<300).contains(http.statusCode)
+            ? AnthropicUsageAPIClient.ParsedAPIError()
+            : Self.parseErrorBody(data)
+        record(APIExchange(
+            timestamp: Date(),
+            tokenFingerprint: fingerprint,
+            statusCode: http.statusCode,
+            retryAfter: retryAfterHeader,
+            parsedErrorType: parsedForLog.errorType,
+            parsedErrorMessage: parsedForLog.message,
+            bodySnippet: bodySnippet(data),
+            transportError: nil
+        ))
+        DiagnosticsLog.api.log(
+            "status=\(http.statusCode, privacy: .public) retry-after=\(retryAfterHeader ?? "-", privacy: .public) error.type=\(parsedForLog.errorType ?? "-", privacy: .public) error.message=\(parsedForLog.message ?? "-", privacy: .public)"
+        )
 
         switch http.statusCode {
         case 200..<300:
             return try Self.decode(data)
         case 401, 403:
-            throw UsageError.tokenInvalid(detail: Self.parseErrorDetail(data))
+            throw UsageError.tokenInvalid(detail: Self.formatDetail(parsedForLog))
         case 429:
-            let parsed = Self.parseErrorBody(data)
             // Anthropic occasionally returns 429 for non-rate-limit conditions
             // (notably credential problems). If the body's `error.type` reads
             // like an auth issue, route through the tokenInvalid path so the
             // caller's evict-and-retry recovery kicks in.
-            if Self.looksLikeAuthFailure(parsed) {
-                throw UsageError.tokenInvalid(detail: Self.formatDetail(parsed))
+            if Self.looksLikeAuthFailure(parsedForLog) {
+                throw UsageError.tokenInvalid(detail: Self.formatDetail(parsedForLog))
             }
-            let header = http.value(forHTTPHeaderField: "Retry-After")
             throw UsageError.rateLimited(
-                retryAfter: Self.parseRetryAfter(header, now: Date()),
-                detail: Self.formatDetail(parsed)
+                retryAfter: Self.parseRetryAfter(retryAfterHeader, now: Date()),
+                detail: Self.formatDetail(parsedForLog)
             )
         default:
-            throw UsageError.serverError(http.statusCode, detail: Self.parseErrorDetail(data))
+            throw UsageError.serverError(http.statusCode, detail: Self.formatDetail(parsedForLog))
         }
+    }
+
+    private func record(_ exchange: APIExchange) {
+        diagnostics?.record(exchange)
+    }
+
+    private func bodySnippet(_ data: Data) -> String? {
+        guard !data.isEmpty else { return nil }
+        let raw = String(data: data.prefix(300), encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return raw?.isEmpty == false ? raw : nil
     }
 
     struct ParsedAPIError: Equatable {

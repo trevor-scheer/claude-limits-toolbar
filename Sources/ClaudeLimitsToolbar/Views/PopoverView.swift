@@ -10,7 +10,8 @@ struct PopoverView: View {
             if let error = viewModel.state.error {
                 ErrorBanner(
                     error: error,
-                    onReauth: { viewModel.reauthenticate() }
+                    onReauth: { viewModel.reauthenticate() },
+                    onCopyDetails: { viewModel.copyDiagnostics() }
                 )
                 Divider()
             }
@@ -22,6 +23,7 @@ struct PopoverView: View {
                 lastUpdatedAt: viewModel.lastUpdatedAt,
                 isRefreshing: viewModel.isRefreshing,
                 onRefresh: { viewModel.refreshNow() },
+                onCopyDetails: { viewModel.copyDiagnostics() },
                 onQuit: { NSApplication.shared.terminate(nil) }
             )
         }
@@ -64,6 +66,9 @@ struct PopoverView: View {
 private struct ErrorBanner: View {
     let error: UsageError
     let onReauth: () -> Void
+    let onCopyDetails: () -> Void
+
+    @State private var copiedAt: Date?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -75,9 +80,23 @@ private struct ErrorBanner: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            if error.isRecoverableByReauth {
-                HStack {
-                    Spacer()
+            HStack(spacing: 8) {
+                Spacer()
+                Button(copiedAt == nil ? "Copy details" : "Copied ✓") {
+                    onCopyDetails()
+                    copiedAt = Date()
+                    Task {
+                        try? await Task.sleep(nanoseconds: 1_500_000_000)
+                        if let copiedAt, Date().timeIntervalSince(copiedAt) >= 1.4 {
+                            self.copiedAt = nil
+                        }
+                    }
+                }
+                .buttonStyle(.borderless)
+                .font(.caption)
+                .help("Copy the recent API exchanges and error state to the clipboard.")
+
+                if error.isRecoverableByReauth {
                     Button("Re-authenticate", action: onReauth)
                         .buttonStyle(.borderless)
                         .font(.caption)
@@ -142,7 +161,10 @@ private struct FooterBar: View {
     let lastUpdatedAt: Date?
     let isRefreshing: Bool
     let onRefresh: () -> Void
+    let onCopyDetails: () -> Void
     let onQuit: () -> Void
+
+    @State private var copiedAt: Date?
 
     var body: some View {
         HStack(spacing: 8) {
@@ -161,6 +183,20 @@ private struct FooterBar: View {
             }
             .buttonStyle(.borderless)
             .help("Refresh")
+            Button {
+                onCopyDetails()
+                copiedAt = Date()
+                Task {
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                    if let copiedAt, Date().timeIntervalSince(copiedAt) >= 1.4 {
+                        self.copiedAt = nil
+                    }
+                }
+            } label: {
+                Image(systemName: copiedAt == nil ? "doc.on.clipboard" : "checkmark")
+            }
+            .buttonStyle(.borderless)
+            .help("Copy recent API diagnostics to the clipboard.")
             preferencesButton
             Button("Quit", action: onQuit)
                 .buttonStyle(.borderless)

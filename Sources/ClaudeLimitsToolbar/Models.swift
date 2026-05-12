@@ -98,13 +98,17 @@ enum UsageError: Error, Equatable {
         case .tokenInvalid(let detail):
             return appending(detail, to: "The access token was rejected. Try `claude /login`, then click Re-authenticate.")
         case .rateLimited(let retryAfter, let detail):
-            let base: String
+            let when: String
             if let retryAfter, retryAfter > Date() {
                 let formatted = retryAfter.formatted(date: .omitted, time: .shortened)
-                base = "Anthropic API is rate-limiting requests. Retrying at \(formatted)."
+                when = "Retrying at \(formatted)."
             } else {
-                base = "Anthropic API is rate-limiting requests. Will retry."
+                when = "Will retry."
             }
+            // 429s often turn out to be stale-token symptoms in disguise;
+            // nudge the user toward Re-authenticate / `claude /login` so they
+            // aren't stuck waiting through a Retry-After window for nothing.
+            let base = "Anthropic API is rate-limiting requests. \(when) If this persists, try Re-authenticate (or `claude /login`)."
             return appending(detail, to: base)
         case .serverError(let code, let detail):
             return appending(detail, to: "Anthropic API returned \(code).")
