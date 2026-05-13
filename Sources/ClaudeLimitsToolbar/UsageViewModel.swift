@@ -77,6 +77,7 @@ final class UsageViewModel: ObservableObject {
     /// keychain entry. Used by the "Re-authenticate" affordance when the cache
     /// is wedged on a stale token the API isn't honoring.
     func reauthenticate() {
+        diagnostics?.record(APIExchange(timestamp: Date(), note: "user clicked Re-authenticate"))
         keychain.purgeCache()
         if case .error(.rateLimited, let last) = state {
             state = .error(.tokenInvalid(detail: "Re-authenticating…"), lastKnown: last)
@@ -149,9 +150,11 @@ final class UsageViewModel: ObservableObject {
         do {
             token = try keychain.fetchAccessToken()
         } catch let e as UsageError {
+            recordNote("keychain read failed: \(e) (allowRetry=\(allowRetry))")
             state = .error(e, lastKnown: state.snapshot)
             return
         } catch {
+            recordNote("keychain read failed (non-UsageError): \(error.localizedDescription) (allowRetry=\(allowRetry))")
             state = .error(.network(error.localizedDescription), lastKnown: state.snapshot)
             return
         }
@@ -166,6 +169,7 @@ final class UsageViewModel: ObservableObject {
         } catch UsageError.tokenInvalid where allowRetry {
             // Cached token may be stale (claude /login or server-side rotation).
             // Evict and re-read Claude's keychain entry once.
+            recordNote("entering retry after tokenInvalid (purging cache, refetching from inner)")
             keychain.purgeCache()
             await attemptRefresh(allowRetry: false)
         } catch UsageError.rateLimited where allowRetry {
@@ -174,13 +178,21 @@ final class UsageViewModel: ObservableObject {
             // is often a stale-token symptom. Purge once and try with a fresh
             // credential; if it still 429s, the second attempt will respect
             // Retry-After.
+            recordNote("entering retry after rateLimited (purging cache, refetching from inner)")
             keychain.purgeCache()
             await attemptRefresh(allowRetry: false)
         } catch let e as UsageError {
+            recordNote("surfacing UsageError (allowRetry=\(allowRetry)): \(e)")
             state = .error(e, lastKnown: state.snapshot)
         } catch {
+            recordNote("surfacing non-UsageError (allowRetry=\(allowRetry)): \(error.localizedDescription)")
             state = .error(.network(error.localizedDescription), lastKnown: state.snapshot)
         }
+    }
+
+    private func recordNote(_ message: String) {
+        diagnostics?.record(APIExchange(timestamp: Date(), note: message))
+        DiagnosticsLog.api.log("vm: \(message, privacy: .public)")
     }
 
     private func observeSettings() {

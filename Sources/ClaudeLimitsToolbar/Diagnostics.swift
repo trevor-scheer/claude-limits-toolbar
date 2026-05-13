@@ -6,13 +6,39 @@ import os.log
 /// leaking the full access token to disk or clipboard.
 struct APIExchange: Sendable {
     let timestamp: Date
-    let tokenFingerprint: String
+    let tokenFingerprint: String?
     let statusCode: Int?
     let retryAfter: String?
     let parsedErrorType: String?
     let parsedErrorMessage: String?
     let bodySnippet: String?
     let transportError: String?
+    /// Free-form annotation for non-HTTP control-flow events recorded into the
+    /// same ring buffer (e.g. "retrying after 401", "keychain read failed").
+    /// Lets us see *why* we did or didn't make a follow-up request.
+    let note: String?
+
+    init(
+        timestamp: Date,
+        tokenFingerprint: String? = nil,
+        statusCode: Int? = nil,
+        retryAfter: String? = nil,
+        parsedErrorType: String? = nil,
+        parsedErrorMessage: String? = nil,
+        bodySnippet: String? = nil,
+        transportError: String? = nil,
+        note: String? = nil
+    ) {
+        self.timestamp = timestamp
+        self.tokenFingerprint = tokenFingerprint
+        self.statusCode = statusCode
+        self.retryAfter = retryAfter
+        self.parsedErrorType = parsedErrorType
+        self.parsedErrorMessage = parsedErrorMessage
+        self.bodySnippet = bodySnippet
+        self.transportError = transportError
+        self.note = note
+    }
 
     static func tokenFingerprint(_ token: String) -> String {
         guard token.count >= 8 else { return "(short)" }
@@ -81,7 +107,12 @@ enum DiagnosticsFormatter {
         for ex in exchanges {
             lines.append("---")
             lines.append("  at: \(iso.string(from: ex.timestamp))")
-            lines.append("  token: \(ex.tokenFingerprint)")
+            if let note = ex.note {
+                lines.append("  note: \(note)")
+            }
+            if let fp = ex.tokenFingerprint {
+                lines.append("  token: \(fp)")
+            }
             if let status = ex.statusCode {
                 lines.append("  status: \(status)")
             }

@@ -56,6 +56,36 @@ import Foundation
     }
 
     @MainActor
+    @Test func tokenInvalidRetryStillFiresEvenWhenInnerHasSameToken() async {
+        // Real-world scenario from 2026-05-12: same token served by both the
+        // cache and Claude's keychain, server starts returning 401. The retry
+        // must still happen (and be observable) so diagnostics capture it.
+        let env = makeEnv()
+        let same = KeychainCredential(accessToken: "sk-same", expiresAt: nil)
+        env.cache.populate(same)
+        env.inner.credential = same
+
+        env.api.queue([
+            .failure(.tokenInvalid(detail: "authentication_error: Invalid authentication credentials")),
+            .failure(.tokenInvalid(detail: "authentication_error: Invalid authentication credentials")),
+        ])
+
+        let vm = makeViewModel(env: env)
+        vm.start()
+        await env.api.waitForCalls(2)
+        await waitUntil {
+            if case .error(.tokenInvalid, _) = vm.state { return true }
+            return false
+        }
+
+        #expect(env.api.callCount == 2)
+        #expect(env.api.tokensSeen == ["sk-same", "sk-same"])
+        if case .error(.tokenInvalid, _) = vm.state {} else {
+            Issue.record("expected tokenInvalid, got \(vm.state)")
+        }
+    }
+
+    @MainActor
     @Test func tokenInvalidStillRecoversAfterPurge() async {
         let env = makeEnv()
         env.cache.populate(KeychainCredential(accessToken: "stale", expiresAt: nil))
